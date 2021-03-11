@@ -29,8 +29,9 @@ NEEDED = []
 
 
 def start(update: Update, context: CallbackContext) -> None:
+    """Send message on `/start`."""
     user = update.message.from_user
-    logger.info("User %s started the conversation.", user.first_name).
+    logger.info("User %s started the conversation.", user.first_name)
     keyboard = [
         [
             InlineKeyboardButton("Создать/изменить вакансию", callback_data=str(ONE)),
@@ -43,7 +44,7 @@ def start(update: Update, context: CallbackContext) -> None:
 
 
 def zero(update: Update, context: CallbackContext) -> None:
-  
+    """Prompt same text & keyboard as `start` does but not as new message"""
     query = update.callback_query
     query.answer()
     keyboard = [
@@ -53,7 +54,6 @@ def zero(update: Update, context: CallbackContext) -> None:
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-  
     query.edit_message_text(text="Что вы хотите сделать?", reply_markup=reply_markup)
     return CREATION_BEFORE_NAME
 
@@ -213,14 +213,22 @@ def name(update: Update, context: CallbackContext) -> None:
     INFO_ABOUT_CLIENT["user_id"] = update.message.from_user["id"]
     text = update.message.text
     INFO_ABOUT_CLIENT["name_of_vacancy"] = text
-    # далее заносится в базу данных
+    update.message.reply_text(
+        text="Введите описание вакансии"
+    )
+    return INFO_ABOUT_VACANCY
+
+
+def info_about_vacancy(update: Update, context: CallbackContext) -> None:
+    text = update.message.text
+    INFO_ABOUT_CLIENT["about_vacancy"] = text
     keyboard = [
         [
-            InlineKeyboardButton("Наличными при встрече", callback_data=str(PAY_CARD))], [
-            InlineKeyboardButton("Оплата картой", callback_data=str(PAY_CASH))], [
-            InlineKeyboardButton("Безвозмездная работа", callback_data=str(WITHOUT_MONEY))
+           InlineKeyboardButton("Наличными при встрече", callback_data=str(PAY_CARD))], [
+          InlineKeyboardButton("Оплата картой", callback_data=str(PAY_CASH))], [
+          InlineKeyboardButton("Безвозмездная работа", callback_data=str(WITHOUT_MONEY))
         ]
-    ]
+     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     update.message.reply_text(
         text="Введите тип оплаты", reply_markup=reply_markup
@@ -234,9 +242,9 @@ def pay_card(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     query.answer()
     query.message.reply_text(
-        text="Введите описание вакансии"
+        text="Укажите срок выполнения работы"
     )
-    return INFO_ABOUT_VACANCY
+    return DEADLINE
 
 
 def pay_cash(update: Update, context: CallbackContext) -> None:
@@ -244,9 +252,9 @@ def pay_cash(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     query.answer()
     query.message.reply_text(
-        text="Введите описание вакансии"
+        text="Укажите срок выполнения работы"
     )
-    return INFO_ABOUT_VACANCY
+    return DEADLINE
 
 
 def without_money(update: Update, context: CallbackContext) -> None:
@@ -254,15 +262,6 @@ def without_money(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     query.answer()
     query.message.reply_text(
-        text="Введите описание вакансии"
-    )
-    return INFO_ABOUT_VACANCY
-
-
-def info_about_vacancy(update: Update, context: CallbackContext) -> None:
-    text = update.message.text
-    INFO_ABOUT_CLIENT["about_vacancy"] = text
-    update.message.reply_text(
         text="Укажите срок выполнения работы"
     )
     return DEADLINE
@@ -270,12 +269,14 @@ def info_about_vacancy(update: Update, context: CallbackContext) -> None:
 
 def deadline(update: Update, context: CallbackContext) -> None:
     text = update.message.text
+    print(update.message.from_user)
     INFO_ABOUT_CLIENT["deadline"] = text
     keyboard = [
         [
             InlineKeyboardButton("Создать", callback_data=str(CREATE)),
         ]
     ]
+    INFO_ABOUT_CLIENT["_id"] = jobdata.collection.find().count() + 1
     reply_markup = InlineKeyboardMarkup(keyboard)
     update.message.reply_text(
         text="Название: {} \nТип: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
@@ -405,14 +406,12 @@ def f_serving(update: Update, context: CallbackContext) -> None:
     )
     return VACANCIES
 
-    # def vacancies(update: Update, context: CallbackContext) -> None:
-    # print(jobdata.collection)
-
 
 def main():
     updater = Updater("1617510398:AAG4zbRLKarnb9tvW_0clME-n97riE7-Y_g")
 
     dispatcher = updater.dispatcher
+
     conv_handler = ConversationHandler(
         entry_points=[CommandHandler('start', start)],
         states={
@@ -453,7 +452,6 @@ def main():
         fallbacks=[CommandHandler('start', start)],
     )
 
-   
     dispatcher.add_handler(conv_handler)
 
     updater.start_polling()

@@ -17,12 +17,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Stages
-CREATION_BEFORE_NAME, NAME, PAY, INFO_ABOUT_VACANCY, DEADLINE, CREATE = range(6)
+CREATION_BEFORE_NAME, NAME, PAY, INFO_ABOUT_VACANCY, DEADLINE, CREATE, COST = range(7)
 # Callback data
 ZERO, ONE, TWO, FIND_JOB, THREE, CONTENT, COMPUTER_HELP, PROGRAMMING, HELP_HOMEWORK, VOLUNTEER, MARKETING, \
 LANGUAGES, SERVING, F_CONTENT, F_COMPUTER_HELP, F_PROGRAMMING, F_HELP_HOMEWORK, F_VOLUNTEER, F_MARKETING, \
-F_LANGUAGES, F_SERVING, VACANCIES, NAME, PAY_CARD, PAY_CASH, WITHOUT_MONEY = \
-    range(26)
+F_LANGUAGES, F_SERVING, VACANCIES, NAME, PAY_CARD_OR_CASH, WITHOUT_MONEY = \
+    range(25)
 INFO_ABOUT_CLIENT = {}
 ALREADY_WATCHED = []
 NEEDED = []
@@ -224,11 +224,10 @@ def info_about_vacancy(update: Update, context: CallbackContext) -> None:
     INFO_ABOUT_CLIENT["about_vacancy"] = text
     keyboard = [
         [
-           InlineKeyboardButton("Наличными при встрече", callback_data=str(PAY_CARD))], [
-          InlineKeyboardButton("Оплата картой", callback_data=str(PAY_CASH))], [
-          InlineKeyboardButton("Безвозмездная работа", callback_data=str(WITHOUT_MONEY))
+           InlineKeyboardButton("Сдельная", callback_data=str(PAY_CARD_OR_CASH))], [
+          InlineKeyboardButton("Безвозмездная работа", callback_data=str(WITHOUT_MONEY))]
         ]
-     ]
+
     reply_markup = InlineKeyboardMarkup(keyboard)
     update.message.reply_text(
         text="Введите тип оплаты", reply_markup=reply_markup
@@ -237,23 +236,22 @@ def info_about_vacancy(update: Update, context: CallbackContext) -> None:
 
 
 # PAY_CARD, PAY_CASH, WITHOUT_MONEY
-def pay_card(update: Update, context: CallbackContext) -> None:
-    INFO_ABOUT_CLIENT["payment"] = "Оплата картой"
+
+
+def pay_card_or_cash(update: Update, context: CallbackContext) -> None:
+    INFO_ABOUT_CLIENT["payment"] = "Сдельная"
     query = update.callback_query
     query.answer()
     query.message.reply_text(
-        text="Укажите срок выполнения работы"
+        text="Введите стоимость"
     )
-    return DEADLINE
+    return COST
 
 
-def pay_cash(update: Update, context: CallbackContext) -> None:
-    INFO_ABOUT_CLIENT["payment"] = "Наличными при встрече"
-    query = update.callback_query
-    query.answer()
-    query.message.reply_text(
-        text="Укажите срок выполнения работы"
-    )
+def cost(update: Update, context: CallbackContext) -> None:
+    text = update.message.text
+    INFO_ABOUT_CLIENT["cost"] = text
+    update.message.reply_text(text="Укажите срок выполнения работы")
     return DEADLINE
 
 
@@ -278,11 +276,21 @@ def deadline(update: Update, context: CallbackContext) -> None:
     ]
     INFO_ABOUT_CLIENT["_id"] = jobdata.collection.find().count() + 1
     reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text(
-        text="Название: {} \nТип: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
-            INFO_ABOUT_CLIENT["name_of_vacancy"], INFO_ABOUT_CLIENT["type_of_work"], INFO_ABOUT_CLIENT["about_vacancy"],
-            INFO_ABOUT_CLIENT["payment"], INFO_ABOUT_CLIENT["deadline"]), reply_markup=reply_markup
-    )
+    if 'cost' in INFO_ABOUT_CLIENT:
+        update.message.reply_text(
+            text="Название: {} \nТип: {} \nОписание: {} \nОплата: {} \nЦена: {} \nСрок: {}".format(
+                INFO_ABOUT_CLIENT["name_of_vacancy"], INFO_ABOUT_CLIENT["type_of_work"],
+                INFO_ABOUT_CLIENT["about_vacancy"],
+                INFO_ABOUT_CLIENT["payment"], INFO_ABOUT_CLIENT["cost"], INFO_ABOUT_CLIENT["deadline"]),
+            reply_markup=reply_markup
+        )
+    else:
+        update.message.reply_text(
+            text="Название: {} \nТип: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                INFO_ABOUT_CLIENT["name_of_vacancy"], INFO_ABOUT_CLIENT["type_of_work"],
+                INFO_ABOUT_CLIENT["about_vacancy"],
+                INFO_ABOUT_CLIENT["payment"], INFO_ABOUT_CLIENT["deadline"]), reply_markup=reply_markup
+        )
     return CREATE
 
 
@@ -441,13 +449,13 @@ def main():
                 CommandHandler('start', start), MessageHandler(Filters.text, name)
             ],
 
-            PAY: [CallbackQueryHandler(pay_card, pattern='^' + str(PAY_CARD) + '$'),
-                  CallbackQueryHandler(pay_cash, pattern='^' + str(PAY_CASH) + '$'),
+            PAY: [CallbackQueryHandler(pay_card_or_cash, pattern='^' + str(PAY_CARD_OR_CASH) + '$'),
                   CallbackQueryHandler(without_money, pattern='^' + str(WITHOUT_MONEY) + '$'),
                   ],
             INFO_ABOUT_VACANCY: [CommandHandler('start', start), MessageHandler(Filters.text, info_about_vacancy)],
             DEADLINE: [CommandHandler('start', start), MessageHandler(Filters.text, deadline)],
-            CREATE: [CallbackQueryHandler(create, pattern='^' + str(CREATE) + '$')]
+            CREATE: [CallbackQueryHandler(create, pattern='^' + str(CREATE) + '$')],
+            COST: [CommandHandler('start', start), MessageHandler(Filters.text, cost)],
         },
         fallbacks=[CommandHandler('start', start)],
     )

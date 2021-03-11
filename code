@@ -21,8 +21,8 @@ CREATION_BEFORE_NAME, NAME, PAY, INFO_ABOUT_VACANCY, DEADLINE, CREATE, COST = ra
 # Callback data
 ZERO, ONE, TWO, FIND_JOB, THREE, CONTENT, COMPUTER_HELP, PROGRAMMING, HELP_HOMEWORK, VOLUNTEER, MARKETING, \
 LANGUAGES, SERVING, F_CONTENT, F_COMPUTER_HELP, F_PROGRAMMING, F_HELP_HOMEWORK, F_VOLUNTEER, F_MARKETING, \
-F_LANGUAGES, F_SERVING, VACANCIES, NAME, PAY_CARD_OR_CASH, WITHOUT_MONEY = \
-    range(25)
+F_LANGUAGES, F_SERVING, VACANCIES, NAME, PAY_CARD_OR_CASH, WITHOUT_MONEY, ACCEPT = \
+    range(26)
 INFO_ABOUT_CLIENT = {}
 ALREADY_WATCHED = []
 NEEDED = []
@@ -131,86 +131,102 @@ def two(update: Update, context: CallbackContext) -> None:
 
 def content(update: Update, context: CallbackContext) -> None:
     INFO_ABOUT_CLIENT["type_of_work"] = "Создание контента"
+    keyboard = [[InlineKeyboardButton("Назад", callback_data=str(TWO))]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     query = update.callback_query
     query.answer()
     query.edit_message_text(
-        text="Введите название вакансии"
+        text="Введите название вакансии", reply_markup=reply_markup
     )
-    return NAME
+    return CREATION_BEFORE_NAME
 
 
 def computer_help(update: Update, context: CallbackContext) -> None:
     INFO_ABOUT_CLIENT["type_of_work"] = "Компьютерная помощь"
+    keyboard = [[InlineKeyboardButton("Назад", callback_data=str(TWO))]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     query = update.callback_query
     query.answer()
     query.edit_message_text(
-        text="Введите название вакансии"
+        text="Введите название вакансии", reply_markup=reply_markup
     )
-    return NAME
+    return CREATION_BEFORE_NAME
 
 
 def programming(update: Update, context: CallbackContext) -> None:
     INFO_ABOUT_CLIENT["type_of_work"] = "Программирование"
+    keyboard = [[InlineKeyboardButton("Назад", callback_data=str(TWO))]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     query = update.callback_query
     query.answer()
     query.edit_message_text(
-        text="Введите название вакансии"
+        text="Введите название вакансии", reply_markup=reply_markup
     )
-    return NAME
+    return CREATION_BEFORE_NAME
 
 
 def help_homework(update: Update, context: CallbackContext) -> None:
     INFO_ABOUT_CLIENT["type_of_work"] = "Уроки(помощь)"
+    keyboard = [[InlineKeyboardButton("Назад", callback_data=str(TWO))]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     query = update.callback_query
     query.answer()
     query.edit_message_text(
-        text="Введите название вакансии"
+        text="Введите название вакансии", reply_markup=reply_markup
     )
-    return NAME
+    return CREATION_BEFORE_NAME
 
 
 def volunteer(update: Update, context: CallbackContext) -> None:
     INFO_ABOUT_CLIENT["type_of_work"] = "Волонтерская помощь"
+    keyboard = [[InlineKeyboardButton("Назад", callback_data=str(TWO))]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     query = update.callback_query
     query.answer()
     query.edit_message_text(
-        text="Введите название вакансии"
+        text="Введите название вакансии", reply_markup=reply_markup
     )
-    return NAME
+    return CREATION_BEFORE_NAME
 
 
 def marketing(update: Update, context: CallbackContext) -> None:
     INFO_ABOUT_CLIENT["type_of_work"] = "Маркетинг"
+    keyboard = [[InlineKeyboardButton("Назад", callback_data=str(TWO))]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     query = update.callback_query
     query.answer()
     query.edit_message_text(
-        text="Введите название вакансии"
+        text="Введите название вакансии", reply_markup=reply_markup
     )
-    return NAME
+    return CREATION_BEFORE_NAME
 
 
 def languages(update: Update, context: CallbackContext) -> None:
     INFO_ABOUT_CLIENT["type_of_work"] = "Языки"
+    keyboard = [[InlineKeyboardButton("Назад", callback_data=str(TWO))]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     query = update.callback_query
     query.answer()
     query.edit_message_text(
-        text="Введите название вакансии"
+        text="Введите название вакансии", reply_markup=reply_markup
     )
-    return NAME
+    return CREATION_BEFORE_NAME
 
 
 def serving(update: Update, context: CallbackContext) -> None:
     INFO_ABOUT_CLIENT["type_of_work"] = "Обслуживание"
+    keyboard = [[InlineKeyboardButton("Назад", callback_data=str(TWO))]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     query = update.callback_query
     query.answer()
     query.edit_message_text(
-        text="Введите название вакансии"
+        text="Введите название вакансии", reply_markup=reply_markup
     )
-    return NAME
+    return CREATION_BEFORE_NAME
 
 
 def name(update: Update, context: CallbackContext) -> None:
-    INFO_ABOUT_CLIENT["user_id"] = update.message.from_user["id"]
+    INFO_ABOUT_CLIENT["user_id"] = update.message.chat.username
     text = update.message.text
     INFO_ABOUT_CLIENT["name_of_vacancy"] = text
     update.message.reply_text(
@@ -224,9 +240,9 @@ def info_about_vacancy(update: Update, context: CallbackContext) -> None:
     INFO_ABOUT_CLIENT["about_vacancy"] = text
     keyboard = [
         [
-           InlineKeyboardButton("Сдельная", callback_data=str(PAY_CARD_OR_CASH))], [
-          InlineKeyboardButton("Безвозмездная работа", callback_data=str(WITHOUT_MONEY))]
-        ]
+            InlineKeyboardButton("Сдельная", callback_data=str(PAY_CARD_OR_CASH))], [
+            InlineKeyboardButton("Безвозмездная работа", callback_data=str(WITHOUT_MONEY))]
+    ]
 
     reply_markup = InlineKeyboardMarkup(keyboard)
     update.message.reply_text(
@@ -312,7 +328,7 @@ def f_content(update: Update, context: CallbackContext) -> None:
             InlineKeyboardButton("Следующая", callback_data=str(F_CONTENT)),
         ],
         [
-            InlineKeyboardButton("Выбрать", callback_data=str(CREATE))
+            InlineKeyboardButton("Выбрать", callback_data=str(ACCEPT))
         ],
         [
             InlineKeyboardButton("Выбрать другой тип", callback_data=str(FIND_JOB))
@@ -341,7 +357,23 @@ def f_content(update: Update, context: CallbackContext) -> None:
         elif ALREADY_WATCHED == NEEDED:
             NEEDED.clear()
             ALREADY_WATCHED.clear()
-            query.message.reply_text(text="Вы всё просмотрели", reply_markup=reply_markup2)
+            query.edit_message_text(text="Вы всё просмотрели", reply_markup=reply_markup2)
+    return CREATION_BEFORE_NAME
+
+
+def accept(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    keyboard = [
+        [
+            InlineKeyboardButton("Назад", callback_data=F_CONTENT)
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    query.message.reply_text(text="Ник: {}".format(
+        ALREADY_WATCHED[len(ALREADY_WATCHED) - 1]["user_id"]
+    ), reply_markup=reply_markup)
+
     return CREATION_BEFORE_NAME
 
 
@@ -444,9 +476,8 @@ def main():
                 CallbackQueryHandler(f_languages, pattern='^' + str(F_LANGUAGES) + '$'),
                 CallbackQueryHandler(f_serving, pattern='^' + str(F_SERVING) + '$'),
                 CallbackQueryHandler(f_marketing, pattern='^' + str(F_MARKETING) + '$'),
-            ],
-            NAME: [
-                CommandHandler('start', start), MessageHandler(Filters.text, name)
+                CommandHandler('start', start), MessageHandler(Filters.text, name),
+                CallbackQueryHandler(accept, pattern='^' + str(ACCEPT) + '$'),
             ],
 
             PAY: [CallbackQueryHandler(pay_card_or_cash, pattern='^' + str(PAY_CARD_OR_CASH) + '$'),

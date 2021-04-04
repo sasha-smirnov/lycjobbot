@@ -1,5 +1,6 @@
 import logging
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update, CallbackQuery, MessageId
 from telegram.ext import (
     Updater,
     CommandHandler,
@@ -7,6 +8,7 @@ from telegram.ext import (
     ConversationHandler,
     CallbackContext,
     MessageHandler, Filters)
+
 import jobdata
 
 # Enable logging
@@ -17,26 +19,41 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Stages
-CREATION_BEFORE_NAME, NAME, PAY, INFO_ABOUT_VACANCY, DEADLINE, CREATE, COST = range(7)
+CREATION_BEFORE_NAME, NAME, PAY, INFO_ABOUT_VACANCY, DEADLINE, CREATE, COST, CONNECT, EDITOR, ACCEPTOR, DELETE_ACCEPTOR = range(11)
 # Callback data
 ZERO, ONE, TWO, FIND_JOB, THREE, CONTENT, COMPUTER_HELP, PROGRAMMING, HELP_HOMEWORK, VOLUNTEER, MARKETING, \
 LANGUAGES, SERVING, F_CONTENT, F_COMPUTER_HELP, F_PROGRAMMING, F_HELP_HOMEWORK, F_VOLUNTEER, F_MARKETING, \
-F_LANGUAGES, F_SERVING, VACANCIES, NAME, PAY_CARD_OR_CASH, WITHOUT_MONEY, ACCEPT = \
-    range(26)
-INFO_ABOUT_CLIENT = {}
-ALREADY_WATCHED = []
-NEEDED = []
+F_LANGUAGES, F_SERVING, VACANCIES, NAME, PAY_CARD_OR_CASH, UPLOADER, WITHOUT_MONEY, ACCEPT, INFO, EDIT, VARIABLE_CHOOSE, E_ACCEPTED, E_ACCEPT, E_COMPUTER_HELP, E_CONTENT, E_PROGRAMMING, E_HELP_HOMEWORK, E_VOLUNTEER, E_MARKETING, \
+E_LANGUAGES, E_SERVING, E_NAME, E_DESCRIPTION, E_DEADLINE, E_CONNECTION, E_COST, E_TYPE, DELETE, D_COMPUTER_HELP, D_CONTENT, D_PROGRAMMING, D_HELP_HOMEWORK, D_VOLUNTEER, D_MARKETING, \
+D_LANGUAGES, D_SERVING, D_NAME, D_DESCRIPTION, D_DEADLINE, D_VARIABLE_CHOOSE, DELETE_ACCEPTED = \
+    range(60)
+NEEDED = {}
+SEEN_VACANCY = []
+ACTIVE_USERS = {}
+NUMBER = {}
+CHOSEN_VAR = {}
+TEXT = {}
+CHOSEN_VAR_TO_DEL = {}
 
 
 def start(update: Update, context: CallbackContext) -> None:
     """Send message on `/start`."""
     user = update.message.from_user
     logger.info("User %s started the conversation.", user.first_name)
+    ACTIVE_USERS["{}".format(user.id)] = {}
+    NEEDED["{}".format(user.id)] = []
+    NUMBER["{}".format(user.id)] = []
+    logger.info(ACTIVE_USERS)
     keyboard = [
         [
             InlineKeyboardButton("Создать/изменить вакансию", callback_data=str(ONE)),
+        ],
+        [
             InlineKeyboardButton("Найти вакансию", callback_data=str(FIND_JOB)),
-        ]
+        ],
+        [
+            InlineKeyboardButton("Информация", callback_data=str(INFO)),
+        ],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     update.message.reply_text("Что вы хотите сделать?", reply_markup=reply_markup)
@@ -47,14 +64,35 @@ def zero(update: Update, context: CallbackContext) -> None:
     """Prompt same text & keyboard as `start` does but not as new message"""
     query = update.callback_query
     query.answer()
+    NEEDED["{}".format(update.callback_query.from_user.id)] = {}
+    NUMBER["{}".format(update.callback_query.from_user.id)] = -1
+    TEXT["{}".format((update.callback_query.from_user.id))] = None
     keyboard = [
         [
-            InlineKeyboardButton("Создать/изменить вакансию", callback_data=str(ONE)),
+            InlineKeyboardButton("Создать/изменить/удалить вакансию", callback_data=str(ONE)),
+        ],
+        [
             InlineKeyboardButton("Найти вакансию", callback_data=str(FIND_JOB)),
-        ]
+        ],
+        [
+            InlineKeyboardButton("Информация", callback_data=str(INFO)),
+        ],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     query.edit_message_text(text="Что вы хотите сделать?", reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
+
+
+def info(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    keyboard = [
+        [
+            InlineKeyboardButton("Назад", callback_data=str(ZERO)),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    query.edit_message_text(text="ВАЖНЫЙ ТЕКСТ", reply_markup=reply_markup)
     return CREATION_BEFORE_NAME
 
 
@@ -65,7 +103,14 @@ def one(update: Update, context: CallbackContext) -> None:
     keyboard = [
         [
             InlineKeyboardButton("Создать новую", callback_data=str(TWO)),
-            InlineKeyboardButton("Изменить существующую", callback_data=str(THREE)),
+        ],
+        [
+            InlineKeyboardButton("Изменить существующую", callback_data=str(EDIT)),
+        ],
+        [
+            InlineKeyboardButton("Удалить существующую", callback_data=str(DELETE)),
+        ],
+        [
             InlineKeyboardButton("Назад", callback_data=str(ZERO)),
         ]
     ]
@@ -79,10 +124,8 @@ def one(update: Update, context: CallbackContext) -> None:
 def find_job(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     query.answer()
-
-    NEEDED.clear()
-    ALREADY_WATCHED.clear()
-
+    NEEDED["{}".format(update.callback_query.from_user.id)] = {}
+    NUMBER["{}".format(update.callback_query.from_user.id)] = -1
     keyboard = [
         [
             InlineKeyboardButton("Создание контента", callback_data=str(F_CONTENT)),
@@ -94,7 +137,7 @@ def find_job(update: Update, context: CallbackContext) -> None:
             InlineKeyboardButton("Маркетинг", callback_data=str(F_MARKETING))], [
             InlineKeyboardButton("Языки", callback_data=str(F_LANGUAGES)),
             InlineKeyboardButton("Обслуживание", callback_data=str(F_SERVING))], [
-            InlineKeyboardButton("Назад", callback_data=str(ONE)),
+            InlineKeyboardButton("Назад", callback_data=str(ZERO)),
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
@@ -107,7 +150,6 @@ def two(update: Update, context: CallbackContext) -> None:
     """Show new choice of buttons"""
     query = update.callback_query
     query.answer()
-
     keyboard = [
         [
             InlineKeyboardButton("Создание контента", callback_data=str(CONTENT)),
@@ -130,11 +172,12 @@ def two(update: Update, context: CallbackContext) -> None:
 
 
 def content(update: Update, context: CallbackContext) -> None:
-    INFO_ABOUT_CLIENT["type_of_work"] = "Создание контента"
-    keyboard = [[InlineKeyboardButton("Назад", callback_data=str(TWO))]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
     query = update.callback_query
     query.answer()
+    ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] = "Создание контента"
+    logger.info(ACTIVE_USERS)
+    keyboard = [[InlineKeyboardButton("Назад", callback_data=str(TWO))]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
     query.edit_message_text(
         text="Введите название вакансии", reply_markup=reply_markup
     )
@@ -142,7 +185,10 @@ def content(update: Update, context: CallbackContext) -> None:
 
 
 def computer_help(update: Update, context: CallbackContext) -> None:
-    INFO_ABOUT_CLIENT["type_of_work"] = "Компьютерная помощь"
+    query = update.callback_query
+    query.answer()
+    ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] = "Компьютерная помощь"
+    logger.info(ACTIVE_USERS)
     keyboard = [[InlineKeyboardButton("Назад", callback_data=str(TWO))]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     query = update.callback_query
@@ -154,7 +200,10 @@ def computer_help(update: Update, context: CallbackContext) -> None:
 
 
 def programming(update: Update, context: CallbackContext) -> None:
-    INFO_ABOUT_CLIENT["type_of_work"] = "Программирование"
+    query = update.callback_query
+    query.answer()
+    ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] = "Программирование"
+    logger.info(ACTIVE_USERS)
     keyboard = [[InlineKeyboardButton("Назад", callback_data=str(TWO))]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     query = update.callback_query
@@ -166,7 +215,10 @@ def programming(update: Update, context: CallbackContext) -> None:
 
 
 def help_homework(update: Update, context: CallbackContext) -> None:
-    INFO_ABOUT_CLIENT["type_of_work"] = "Уроки(помощь)"
+    query = update.callback_query
+    query.answer()
+    ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] = "Уроки(помощь)"
+    logger.info(ACTIVE_USERS)
     keyboard = [[InlineKeyboardButton("Назад", callback_data=str(TWO))]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     query = update.callback_query
@@ -178,7 +230,10 @@ def help_homework(update: Update, context: CallbackContext) -> None:
 
 
 def volunteer(update: Update, context: CallbackContext) -> None:
-    INFO_ABOUT_CLIENT["type_of_work"] = "Волонтерская помощь"
+    query = update.callback_query
+    query.answer()
+    ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] = "Волонтерская помощь"
+    logger.info(ACTIVE_USERS)
     keyboard = [[InlineKeyboardButton("Назад", callback_data=str(TWO))]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     query = update.callback_query
@@ -190,7 +245,10 @@ def volunteer(update: Update, context: CallbackContext) -> None:
 
 
 def marketing(update: Update, context: CallbackContext) -> None:
-    INFO_ABOUT_CLIENT["type_of_work"] = "Маркетинг"
+    query = update.callback_query
+    query.answer()
+    ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] = "Маркетинг"
+    logger.info(ACTIVE_USERS)
     keyboard = [[InlineKeyboardButton("Назад", callback_data=str(TWO))]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     query = update.callback_query
@@ -202,7 +260,10 @@ def marketing(update: Update, context: CallbackContext) -> None:
 
 
 def languages(update: Update, context: CallbackContext) -> None:
-    INFO_ABOUT_CLIENT["type_of_work"] = "Языки"
+    query = update.callback_query
+    query.answer()
+    ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] = "Языки"
+    logger.info(ACTIVE_USERS)
     keyboard = [[InlineKeyboardButton("Назад", callback_data=str(TWO))]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     query = update.callback_query
@@ -214,7 +275,10 @@ def languages(update: Update, context: CallbackContext) -> None:
 
 
 def serving(update: Update, context: CallbackContext) -> None:
-    INFO_ABOUT_CLIENT["type_of_work"] = "Обслуживание"
+    query = update.callback_query
+    query.answer()
+    ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] = "Обслуживание"
+    logger.info(ACTIVE_USERS)
     keyboard = [[InlineKeyboardButton("Назад", callback_data=str(TWO))]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     query = update.callback_query
@@ -225,10 +289,1353 @@ def serving(update: Update, context: CallbackContext) -> None:
     return CREATION_BEFORE_NAME
 
 
+def d_variable_choose(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    CHOSEN_VAR_TO_DEL["{}".format(update.callback_query.from_user.id)] = None
+    keyboard = [
+        [InlineKeyboardButton("Да", callback_data=str(DELETE_ACCEPTED)),
+
+         ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    query.edit_message_text(
+            text="Точно хотите удалить?", reply_markup=reply_markup
+        )
+    return DELETE_ACCEPTOR
+
+
+def delete_accepted(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    ACTIVE_USERS["{}".format(update.callback_query.from_user.id)] = \
+        NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]
+    print(ACTIVE_USERS)
+    print(NEEDED["{}".format(update.callback_query.from_user.id)][
+        NUMBER["{}".format(update.callback_query.from_user.id)]])
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Компьютерная помощь":
+        jobdata.PCColl.delete_one(NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)]])
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Программирование":
+        jobdata.ProgColl.delete_one(NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)]])
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Уроки(помощь)":
+        jobdata.LessColl.delete_one(NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)]])
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Волонтерская помощь":
+        jobdata.VolColl.delete_one(NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)]])
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Маркетинг":
+        jobdata.MarkColl.delete_one(NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)]])
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Языки":
+        jobdata.LangColl.delete_one(NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)]])
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Обслуживание":
+        jobdata.ServColl.delete_one(NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)]])
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Создание контента":
+        jobdata.ContColl.delete_one(NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)]])
+    keyboard = [[InlineKeyboardButton("Назад", callback_data=str(DELETE))]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    query.edit_message_text(
+        text="Успешно удалено", reply_markup=reply_markup
+    )
+    return CREATION_BEFORE_NAME
+
+
+def delete(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    NEEDED["{}".format(update.callback_query.from_user.id)] = {}
+    NUMBER["{}".format(update.callback_query.from_user.id)] = -1
+
+    keyboard = [
+        [
+            InlineKeyboardButton("Создание контента", callback_data=str(D_CONTENT)),
+            InlineKeyboardButton("Компьютерная помощь", callback_data=str(D_COMPUTER_HELP)),
+        ], [
+            InlineKeyboardButton("Программирование", callback_data=str(D_PROGRAMMING)),
+            InlineKeyboardButton("Уроки(помощь)", callback_data=str(D_HELP_HOMEWORK))], [
+            InlineKeyboardButton("Волонтерская помощь", callback_data=str(D_VOLUNTEER)),
+            InlineKeyboardButton("Маркетинг", callback_data=str(D_MARKETING))], [
+            InlineKeyboardButton("Языки", callback_data=str(D_LANGUAGES)),
+            InlineKeyboardButton("Обслуживание", callback_data=str(D_SERVING))], [
+            InlineKeyboardButton("Назад", callback_data=str(ONE)),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    query.edit_message_text(
+        text="Выберите тип вакансии", reply_markup=reply_markup
+    )
+    return CREATION_BEFORE_NAME
+
+
+def d_computer_help(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(
+        jobdata.PCColl.find({'user_id': update.callback_query.from_user.id}))
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Удалить", callback_data=str(D_VARIABLE_CHOOSE))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(D_COMPUTER_HELP))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(DELETE))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(DELETE))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
+
+
+def d_programming(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(
+        jobdata.ProgColl.find({'user_id': update.callback_query.from_user.id}))
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Удалить", callback_data=str(D_VARIABLE_CHOOSE))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(D_PROGRAMMING))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(DELETE))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(DELETE))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
+
+
+def d_volunteer(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(
+        jobdata.VolColl.find({'user_id': update.callback_query.from_user.id}))
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Удалить", callback_data=str(D_VARIABLE_CHOOSE))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(D_VOLUNTEER))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(DELETE))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(DELETE))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
+
+
+def d_content(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(
+        jobdata.ContColl.find({'user_id': update.callback_query.from_user.id}))
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Удалить", callback_data=str(D_VARIABLE_CHOOSE))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(D_CONTENT))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(DELETE))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(DELETE))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
+
+
+def d_languages(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(
+        jobdata.LangColl.find({'user_id': update.callback_query.from_user.id}))
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Удалить", callback_data=str(D_VARIABLE_CHOOSE))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(D_LANGUAGES))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(DELETE))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(DELETE))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
+
+
+def d_serving(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(
+        jobdata.ServColl.find({'user_id': update.callback_query.from_user.id}))
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Удалить", callback_data=str(D_VARIABLE_CHOOSE))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(D_SERVING))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(DELETE))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(DELETE))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
+
+
+def d_marketing(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(
+        jobdata.MarkColl.find({'user_id': update.callback_query.from_user.id}))
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Удалить", callback_data=str(D_VARIABLE_CHOOSE))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(D_MARKETING))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(DELETE))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(DELETE))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
+
+
+def d_help_homework(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(
+        jobdata.LessColl.find({'user_id': update.callback_query.from_user.id}))
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Удалить", callback_data=str(D_VARIABLE_CHOOSE))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(D_HELP_HOMEWORK))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(DELETE))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(DELETE))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
+
+
+def edit(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    NEEDED["{}".format(update.callback_query.from_user.id)] = {}
+    NUMBER["{}".format(update.callback_query.from_user.id)] = -1
+
+    keyboard = [
+        [
+            InlineKeyboardButton("Создание контента", callback_data=str(E_CONTENT)),
+            InlineKeyboardButton("Компьютерная помощь", callback_data=str(E_COMPUTER_HELP)),
+        ], [
+            InlineKeyboardButton("Программирование", callback_data=str(E_PROGRAMMING)),
+            InlineKeyboardButton("Уроки(помощь)", callback_data=str(E_HELP_HOMEWORK))], [
+            InlineKeyboardButton("Волонтерская помощь", callback_data=str(E_VOLUNTEER)),
+            InlineKeyboardButton("Маркетинг", callback_data=str(E_MARKETING))], [
+            InlineKeyboardButton("Языки", callback_data=str(E_LANGUAGES)),
+            InlineKeyboardButton("Обслуживание", callback_data=str(E_SERVING))], [
+            InlineKeyboardButton("Назад", callback_data=str(ONE)),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    query.edit_message_text(
+        text="Выберите тип вакансии", reply_markup=reply_markup
+    )
+    return CREATION_BEFORE_NAME
+
+
+def e_name(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    CHOSEN_VAR["{}".format(update.callback_query.from_user.id)] = 'name_of_vacancy'
+    query.edit_message_text(
+        text="Введите название вакансии"
+    )
+    return ACCEPTOR
+
+
+def e_description(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    CHOSEN_VAR["{}".format(update.callback_query.from_user.id)] = "about_vacancy"
+    query.edit_message_text(
+        text="Введите описание вакансии"
+    )
+    return ACCEPTOR
+
+
+def e_deadline(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    CHOSEN_VAR["{}".format(update.callback_query.from_user.id)] = 'deadline'
+    query.edit_message_text(
+        text="Введите дедлайн вакансии"
+    )
+    return ACCEPTOR
+
+
+def e_cost(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    CHOSEN_VAR["{}".format(update.callback_query.from_user.id)] = 'cost'
+    query.edit_message_text(
+        text="Введите стоимость"
+    )
+    return ACCEPTOR
+
+
+def e_connection(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    CHOSEN_VAR["{}".format(update.callback_query.from_user.id)] = 'connection'
+    query.edit_message_text(
+        text="Введите средство связи"
+    )
+    return ACCEPTOR
+
+
+def e_accept(update: Update, context: CallbackContext) -> None:
+    TEXT["{}".format(update.message.from_user.id)] = update.message.text
+    logger.info(TEXT)
+    keyboard = [[InlineKeyboardButton("Подтверждаю", callback_data=str(E_ACCEPTED))]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    update.message.reply_text(
+        text="Подтвердите изменение", reply_markup=reply_markup
+    )
+    return ACCEPTOR
+
+
+def e_accepted(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    NEEDED["{}".format(update.callback_query.from_user.id)][
+        NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+            NEEDED["{}".format(update.callback_query.from_user.id)])][
+        CHOSEN_VAR["{}".format(update.callback_query.from_user.id)]] = TEXT[
+        "{}".format(update.callback_query.from_user.id)]
+    ACTIVE_USERS["{}".format(update.callback_query.from_user.id)] = \
+        NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Компьютерная помощь":
+        jobdata.PCColl.update_one({"_id": ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["_id"]}, {
+            "$set": {CHOSEN_VAR["{}".format(update.callback_query.from_user.id)]: TEXT[
+                "{}".format(update.callback_query.from_user.id)]}})
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Программирование":
+        jobdata.ProgColl.update_one({"_id": ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["_id"]}, {
+            "$set": {CHOSEN_VAR["{}".format(update.callback_query.from_user.id)]: TEXT[
+                "{}".format(update.callback_query.from_user.id)]}})
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Уроки(помощь)":
+        jobdata.LessColl.update_one({"_id": ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["_id"]}, {
+            "$set": {CHOSEN_VAR["{}".format(update.callback_query.from_user.id)]: TEXT[
+                "{}".format(update.callback_query.from_user.id)]}})
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Волонтерская помощь":
+        jobdata.VolColl.update_one({"_id": ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["_id"]}, {
+            "$set": {CHOSEN_VAR["{}".format(update.callback_query.from_user.id)]: TEXT[
+                "{}".format(update.callback_query.from_user.id)]}})
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Маркетинг":
+        jobdata.MarkColl.update_one({"_id": ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["_id"]}, {
+            "$set": {CHOSEN_VAR["{}".format(update.callback_query.from_user.id)]: TEXT[
+                "{}".format(update.callback_query.from_user.id)]}})
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Языки":
+        jobdata.LangColl.update_one({"_id": ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["_id"]}, {
+            "$set": {CHOSEN_VAR["{}".format(update.callback_query.from_user.id)]: TEXT[
+                "{}".format(update.callback_query.from_user.id)]}})
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Обслуживание":
+        jobdata.ServColl.update_one({"_id": ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["_id"]}, {
+            "$set": {CHOSEN_VAR["{}".format(update.callback_query.from_user.id)]: TEXT[
+                "{}".format(update.callback_query.from_user.id)]}})
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Создание контента":
+        jobdata.ContColl.update_one({"_id": ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["_id"]}, {
+            "$set": {CHOSEN_VAR["{}".format(update.callback_query.from_user.id)]: TEXT[
+                "{}".format(update.callback_query.from_user.id)]}})
+    keyboard = [[InlineKeyboardButton("Назад", callback_data=str(EDIT))]]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    query.edit_message_text(
+        text="Успешно изменено", reply_markup=reply_markup
+    )
+    return CREATION_BEFORE_NAME
+
+
+def variable_choose(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    CHOSEN_VAR["{}".format(update.callback_query.from_user.id)] = None
+    keyboard = [
+        [
+            InlineKeyboardButton("Название вакансии", callback_data=str(E_NAME)),
+            InlineKeyboardButton("Описание вакансии", callback_data=str(E_DESCRIPTION)),
+        ], [
+            InlineKeyboardButton("Стоимость", callback_data=str(E_COST)),
+            InlineKeyboardButton("Дедлайн", callback_data=str(E_DEADLINE))],
+        [InlineKeyboardButton("Средство связи", callback_data=str(E_CONNECTION)),
+         InlineKeyboardButton("Назад", callback_data=str(EDIT)),
+
+         ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Название вакансии", callback_data=str(E_NAME)),
+            InlineKeyboardButton("Описание вакансии", callback_data=str(E_DESCRIPTION)),
+        ], [
+            InlineKeyboardButton("Дедлайн", callback_data=str(E_DEADLINE)),
+            InlineKeyboardButton("Средство связи", callback_data=str(E_CONNECTION))], [
+            InlineKeyboardButton("Назад", callback_data=str(EDIT)),
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    if (NEEDED["{}".format(update.callback_query.from_user.id)][
+        NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+            NEEDED["{}".format(update.callback_query.from_user.id)])]['cost'] is None):
+        query.edit_message_text(
+            text="Выберите параметр для изменения", reply_markup=reply_markup2
+        )
+    else:
+        query.edit_message_text(
+            text="Выберите параметр для изменения", reply_markup=reply_markup
+        )
+
+    return CREATION_BEFORE_NAME
+
+
+def e_computer_help(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(
+        jobdata.PCColl.find({'user_id': update.callback_query.from_user.id}))
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Изменить", callback_data=str(VARIABLE_CHOOSE))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(E_COMPUTER_HELP))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(EDIT))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(EDIT))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
+
+
+def e_programming(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(
+        jobdata.ProgColl.find({'user_id': update.callback_query.from_user.id}))
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Изменить", callback_data=str(VARIABLE_CHOOSE))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(E_PROGRAMMING))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(EDIT))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(EDIT))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
+
+
+def e_volunteer(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(
+        jobdata.VolColl.find({'user_id': update.callback_query.from_user.id}))
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Изменить", callback_data=str(VARIABLE_CHOOSE))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(E_VOLUNTEER))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(EDIT))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(EDIT))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
+
+
+def e_content(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(
+        jobdata.ContColl.find({'user_id': update.callback_query.from_user.id}))
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Изменить", callback_data=str(VARIABLE_CHOOSE))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(E_CONTENT))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(EDIT))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(EDIT))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
+
+
+def e_languages(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(
+        jobdata.LangColl.find({'user_id': update.callback_query.from_user.id}))
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Изменить", callback_data=str(VARIABLE_CHOOSE))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(E_LANGUAGES))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(EDIT))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(EDIT))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
+
+
+def e_serving(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(
+        jobdata.ServColl.find({'user_id': update.callback_query.from_user.id}))
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Изменить", callback_data=str(VARIABLE_CHOOSE))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(E_SERVING))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(EDIT))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(EDIT))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
+
+
+def e_marketing(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(
+        jobdata.MarkColl.find({'user_id': update.callback_query.from_user.id}))
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Изменить", callback_data=str(VARIABLE_CHOOSE))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(E_MARKETING))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(EDIT))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(EDIT))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
+
+
+def e_help_homework(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(
+        jobdata.LessColl.find({'user_id': update.callback_query.from_user.id}))
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Изменить", callback_data=str(VARIABLE_CHOOSE))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(E_HELP_HOMEWORK))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(EDIT))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(EDIT))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
+
+
 def name(update: Update, context: CallbackContext) -> None:
-    INFO_ABOUT_CLIENT["user_id"] = update.message.chat.username
-    text = update.message.text
-    INFO_ABOUT_CLIENT["name_of_vacancy"] = text
+    TEXT["{}".format(update.message.from_user.id)] = update.message.text
+    ACTIVE_USERS["{}".format(update.message.from_user.id)]["user_id"] = update.message.from_user.id
+    ACTIVE_USERS["{}".format(update.message.from_user.id)]["username"] = update.message.from_user.username
+    ACTIVE_USERS["{}".format(update.message.from_user.id)]["connection"] = None
+    ACTIVE_USERS["{}".format(update.message.from_user.id)]["name_of_vacancy"] = TEXT[
+        "{}".format(update.message.from_user.id)]
+    logger.info(ACTIVE_USERS)
     update.message.reply_text(
         text="Введите описание вакансии"
     )
@@ -236,8 +1643,10 @@ def name(update: Update, context: CallbackContext) -> None:
 
 
 def info_about_vacancy(update: Update, context: CallbackContext) -> None:
-    text = update.message.text
-    INFO_ABOUT_CLIENT["about_vacancy"] = text
+    TEXT["{}".format(update.message.from_user.id)] = update.message.text
+    ACTIVE_USERS["{}".format(update.message.from_user.id)]["about_vacancy"] = TEXT[
+        "{}".format(update.message.from_user.id)]
+    logger.info(ACTIVE_USERS)
     keyboard = [
         [
             InlineKeyboardButton("Сдельная", callback_data=str(PAY_CARD_OR_CASH))], [
@@ -251,13 +1660,11 @@ def info_about_vacancy(update: Update, context: CallbackContext) -> None:
     return PAY
 
 
-# PAY_CARD, PAY_CASH, WITHOUT_MONEY
-
-
 def pay_card_or_cash(update: Update, context: CallbackContext) -> None:
-    INFO_ABOUT_CLIENT["payment"] = "Сдельная"
     query = update.callback_query
     query.answer()
+    ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["payment"] = "Сдельная"
+    logger.info(ACTIVE_USERS)
     query.message.reply_text(
         text="Введите стоимость"
     )
@@ -265,16 +1672,19 @@ def pay_card_or_cash(update: Update, context: CallbackContext) -> None:
 
 
 def cost(update: Update, context: CallbackContext) -> None:
-    text = update.message.text
-    INFO_ABOUT_CLIENT["cost"] = text
+    TEXT["{}".format(update.message.from_user.id)] = update.message.text
+    ACTIVE_USERS["{}".format(update.message.from_user.id)]["cost"] = TEXT["{}".format(update.message.from_user.id)]
+    logger.info(ACTIVE_USERS)
     update.message.reply_text(text="Укажите срок выполнения работы")
     return DEADLINE
 
 
 def without_money(update: Update, context: CallbackContext) -> None:
-    INFO_ABOUT_CLIENT["payment"] = "Безвозмездная работа"
     query = update.callback_query
     query.answer()
+    ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["payment"] = "Безвозмездная работа"
+    ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["cost"] = None
+    logger.info(ACTIVE_USERS)
     query.message.reply_text(
         text="Укажите срок выполнения работы"
     )
@@ -282,82 +1692,59 @@ def without_money(update: Update, context: CallbackContext) -> None:
 
 
 def deadline(update: Update, context: CallbackContext) -> None:
-    text = update.message.text
+    TEXT["{}".format(update.message.from_user.id)] = update.message.text
     print(update.message.from_user)
-    INFO_ABOUT_CLIENT["deadline"] = text
+    ACTIVE_USERS["{}".format(update.message.from_user.id)]["deadline"] = TEXT["{}".format(update.message.from_user.id)]
+    logger.info(ACTIVE_USERS)
+    update.message.reply_text(
+        text="Введите данные для связи"
+    )
+    return CONNECT
+
+
+def connection(update: Update, context: CallbackContext) -> None:
     keyboard = [
         [
             InlineKeyboardButton("Создать", callback_data=str(CREATE)),
         ]
     ]
-    INFO_ABOUT_CLIENT["_id"] = jobdata.collection.find().count() + 1
     reply_markup = InlineKeyboardMarkup(keyboard)
-    if 'cost' in INFO_ABOUT_CLIENT:
-        update.message.reply_text(
-            text="Название: {} \nТип: {} \nОписание: {} \nОплата: {} \nЦена: {} \nСрок: {}".format(
-                INFO_ABOUT_CLIENT["name_of_vacancy"], INFO_ABOUT_CLIENT["type_of_work"],
-                INFO_ABOUT_CLIENT["about_vacancy"],
-                INFO_ABOUT_CLIENT["payment"], INFO_ABOUT_CLIENT["cost"], INFO_ABOUT_CLIENT["deadline"]),
-            reply_markup=reply_markup
-        )
-    else:
-        update.message.reply_text(
-            text="Название: {} \nТип: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
-                INFO_ABOUT_CLIENT["name_of_vacancy"], INFO_ABOUT_CLIENT["type_of_work"],
-                INFO_ABOUT_CLIENT["about_vacancy"],
-                INFO_ABOUT_CLIENT["payment"], INFO_ABOUT_CLIENT["deadline"]), reply_markup=reply_markup
-        )
+    TEXT["{}".format(update.message.from_user.id)] = update.message.text
+    ACTIVE_USERS["{}".format(update.message.from_user.id)]["connection"] = TEXT[
+        "{}".format(update.message.from_user.id)]
+    update.message.reply_text(
+        text="Создать вакансию?", reply_markup=reply_markup)
     return CREATE
 
 
 def create(update: Update, context: CallbackContext) -> None:
-    jobdata.collection.insert_one(INFO_ABOUT_CLIENT)
     query = update.callback_query
     query.answer()
-    query.message.reply_text(
-        text="Вакансия успешно создана."
-    )
-    return ConversationHandler.END
-
-
-def f_content(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    query.answer()
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Компьютерная помощь":
+        jobdata.PCColl.insert_one(ACTIVE_USERS["{}".format(update.callback_query.from_user.id)])
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Программирование":
+        jobdata.ProgColl.insert_one(ACTIVE_USERS["{}".format(update.callback_query.from_user.id)])
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Уроки(помощь)":
+        jobdata.LessColl.insert_one(ACTIVE_USERS["{}".format(update.callback_query.from_user.id)])
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Волонтерская помощь":
+        jobdata.VolColl.insert_one(ACTIVE_USERS["{}".format(update.callback_query.from_user.id)])
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Маркетинг":
+        jobdata.MarkColl.insert_one(ACTIVE_USERS["{}".format(update.callback_query.from_user.id)])
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Языки":
+        jobdata.LangColl.insert_one(ACTIVE_USERS["{}".format(update.callback_query.from_user.id)])
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Обслуживание":
+        jobdata.ServColl.insert_one(ACTIVE_USERS["{}".format(update.callback_query.from_user.id)])
+    if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Создание контента":
+        jobdata.ContColl.insert_one(ACTIVE_USERS["{}".format(update.callback_query.from_user.id)])
     keyboard = [
         [
-            InlineKeyboardButton("Следующая", callback_data=str(F_CONTENT)),
-        ],
-        [
-            InlineKeyboardButton("Выбрать", callback_data=str(ACCEPT))
-        ],
-        [
-            InlineKeyboardButton("Выбрать другой тип", callback_data=str(FIND_JOB))
+            InlineKeyboardButton("Назад", callback_data=str(ZERO)),
         ]
-
-    ]
-    keyboard2 = [
-        [
-            InlineKeyboardButton("Выбрать другой тип", callback_data=str(FIND_JOB))
-        ]
-
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    reply_markup2 = InlineKeyboardMarkup(keyboard2)
-    vacancies = jobdata.collection.find()
-    for i in vacancies:
-        if i["type_of_work"] == "Создание контента":
-            NEEDED.append(i)
-    for i in NEEDED:
-        if i not in ALREADY_WATCHED:
-            ALREADY_WATCHED.append(i)
-            query.message.reply_text(text="Название: {} \nТип: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
-                i["name_of_vacancy"], i["type_of_work"],
-                i["about_vacancy"],
-                i["payment"], i["deadline"]), reply_markup=reply_markup)
-        elif ALREADY_WATCHED == NEEDED:
-            NEEDED.clear()
-            ALREADY_WATCHED.clear()
-            query.edit_message_text(text="Вы всё просмотрели", reply_markup=reply_markup2)
+    query.message.edit_text(
+        text="Вакансия успешно создана", reply_markup=reply_markup)
+    ACTIVE_USERS["{}".format(update.callback_query.from_user.id)].clear()
     return CREATION_BEFORE_NAME
 
 
@@ -366,85 +1753,557 @@ def accept(update: Update, context: CallbackContext) -> None:
     query.answer()
     keyboard = [
         [
-            InlineKeyboardButton("Назад", callback_data=F_CONTENT)
+            InlineKeyboardButton("Назад", callback_data=FIND_JOB)
         ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    query.message.reply_text(text="Ник: {}".format(
-        ALREADY_WATCHED[len(ALREADY_WATCHED) - 1]["user_id"]
-    ), reply_markup=reply_markup)
-
+    if (NEEDED["{}".format(update.callback_query.from_user.id)][
+        NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+            NEEDED["{}".format(update.callback_query.from_user.id)])]["username"] is None):
+        query.message.edit_text(text="Данные для связи: {}".format(
+            NEEDED["{}".format(update.callback_query.from_user.id)][
+                NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                    NEEDED["{}".format(update.callback_query.from_user.id)])]["connection"]
+        ), reply_markup=reply_markup)
+    else:
+        query.message.edit_text(text="Ник: @{} \n"
+                                     "Дополнительные данные для связи: {}".format(
+            NEEDED["{}".format(update.callback_query.from_user.id)][
+                NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                    NEEDED["{}".format(update.callback_query.from_user.id)])]["username"],
+            NEEDED["{}".format(update.callback_query.from_user.id)][
+                NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                    NEEDED["{}".format(update.callback_query.from_user.id)])]["connection"]
+        ), reply_markup=reply_markup)
     return CREATION_BEFORE_NAME
 
 
 def f_computer_help(update: Update, context: CallbackContext) -> None:
-    WANTED_VACANCY = "Компьютерная помощь"
     query = update.callback_query
     query.answer()
-    query.edit_message_text(
-        text="Ща поищем"
-    )
-    return VACANCIES
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(jobdata.PCColl.find())
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Выбрать", callback_data=str(ACCEPT))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(F_COMPUTER_HELP))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(FIND_JOB))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(FIND_JOB))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
 
 
 def f_programming(update: Update, context: CallbackContext) -> None:
-    WANTED_VACANCY = "Программирование"
     query = update.callback_query
     query.answer()
-    query.edit_message_text(
-        text="Ща поищем"
-    )
-    return VACANCIES
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(jobdata.ProgColl.find())
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Выбрать", callback_data=str(ACCEPT))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(F_PROGRAMMING))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(FIND_JOB))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(FIND_JOB))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
 
 
 def f_help_homework(update: Update, context: CallbackContext) -> None:
-    WANTED_VACANCY = "Уроки(помощь)"
     query = update.callback_query
     query.answer()
-    query.edit_message_text(
-        text="Ща поищем"
-    )
-    return VACANCIES
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(jobdata.LessColl.find())
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Выбрать", callback_data=str(ACCEPT))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(F_HELP_HOMEWORK))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(FIND_JOB))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(FIND_JOB))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
 
 
 def f_volunteer(update: Update, context: CallbackContext) -> None:
-    WANTED_VACANCY = "Волонтерская помощь"
     query = update.callback_query
     query.answer()
-    query.edit_message_text(
-        text="Ща поищем"
-    )
-    return VACANCIES
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(jobdata.VolColl.find())
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Выбрать", callback_data=str(ACCEPT))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(F_VOLUNTEER))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(FIND_JOB))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(FIND_JOB))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
 
 
 def f_marketing(update: Update, context: CallbackContext) -> None:
-    WANTED_VACANCY = "Маркетинг"
     query = update.callback_query
     query.answer()
-    query.edit_message_text(
-        text="Ща поищем"
-    )
-    return VACANCIES
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(jobdata.MarkColl.find())
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Выбрать", callback_data=str(ACCEPT))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(F_MARKETING))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(FIND_JOB))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(FIND_JOB))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
 
 
 def f_languages(update: Update, context: CallbackContext) -> None:
-    WANTED_VACANCY = "Языки"
     query = update.callback_query
     query.answer()
-    query.edit_message_text(
-        text="Ща поищем"
-    )
-    return VACANCIES
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(jobdata.LangColl.find())
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Выбрать", callback_data=str(ACCEPT))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(F_LANGUAGES))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(FIND_JOB))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(FIND_JOB))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
 
 
 def f_serving(update: Update, context: CallbackContext) -> None:
-    WANTED_VACANCY = "Обслуживание"
     query = update.callback_query
     query.answer()
-    query.edit_message_text(
-        text="Ща поищем"
-    )
-    return VACANCIES
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(jobdata.ServColl.find())
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Выбрать", callback_data=str(ACCEPT))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(F_SERVING))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(FIND_JOB))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(FIND_JOB))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
+
+
+def f_content(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+    NUMBER["{}".format(update.callback_query.from_user.id)] += 1
+    NEEDED["{}".format(update.callback_query.from_user.id)] = list(jobdata.ContColl.find())
+    query.bot.delete_message(query.message.chat.id, query.message.message_id)
+    keyboard = [
+        [
+            InlineKeyboardButton("Выбрать", callback_data=str(ACCEPT))
+        ],
+        [
+            InlineKeyboardButton("Следующий", callback_data=str(F_CONTENT))
+        ],
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(FIND_JOB))
+        ]
+    ]
+    keyboard2 = [
+        [
+            InlineKeyboardButton("Выбрать другой тип", callback_data=str(FIND_JOB))
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    reply_markup2 = InlineKeyboardMarkup(keyboard2)
+    logger.info(NEEDED["{}".format(update.callback_query.from_user.id)])
+    if (len(NEEDED["{}".format(update.callback_query.from_user.id)]) == 0):
+        query.message.reply_text(text="Нет вакансий выбранного типа", reply_markup=reply_markup2)
+    else:
+        if (NEEDED["{}".format(update.callback_query.from_user.id)][
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"] != "Сдельная"):
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+        else:
+            query.message.reply_text(text="Название: {} \nОписание: {} \nОплата: {} \nСтоимость: {} \nСрок: {}".format(
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["name_of_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["about_vacancy"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["payment"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["cost"],
+                NEEDED["{}".format(update.callback_query.from_user.id)][
+                    NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                        NEEDED["{}".format(update.callback_query.from_user.id)])]["deadline"]),
+                reply_markup=reply_markup)
+    return CREATION_BEFORE_NAME
 
 
 def main():
@@ -459,6 +2318,7 @@ def main():
                 CallbackQueryHandler(zero, pattern='^' + str(ZERO) + '$'),
                 CallbackQueryHandler(one, pattern='^' + str(ONE) + '$'),
                 CallbackQueryHandler(two, pattern='^' + str(TWO) + '$'),
+                CallbackQueryHandler(info, pattern='^' + str(INFO) + '$'),
                 CallbackQueryHandler(find_job, pattern='^' + str(FIND_JOB) + '$'),
                 CallbackQueryHandler(content, pattern='^' + str(CONTENT) + '$'),
                 CallbackQueryHandler(computer_help, pattern='^' + str(COMPUTER_HELP) + '$'),
@@ -476,17 +2336,52 @@ def main():
                 CallbackQueryHandler(f_languages, pattern='^' + str(F_LANGUAGES) + '$'),
                 CallbackQueryHandler(f_serving, pattern='^' + str(F_SERVING) + '$'),
                 CallbackQueryHandler(f_marketing, pattern='^' + str(F_MARKETING) + '$'),
-                CommandHandler('start', start), MessageHandler(Filters.text, name),
+                CallbackQueryHandler(e_content, pattern='^' + str(E_CONTENT) + '$'),
+                CallbackQueryHandler(e_programming, pattern='^' + str(E_PROGRAMMING) + '$'),
+                CallbackQueryHandler(e_help_homework, pattern='^' + str(E_HELP_HOMEWORK) + '$'),
+                CallbackQueryHandler(e_volunteer, pattern='^' + str(E_VOLUNTEER) + '$'),
+                CallbackQueryHandler(e_languages, pattern='^' + str(E_LANGUAGES) + '$'),
+                CallbackQueryHandler(e_serving, pattern='^' + str(E_SERVING) + '$'),
+                CallbackQueryHandler(e_marketing, pattern='^' + str(E_MARKETING) + '$'),
+                CallbackQueryHandler(e_computer_help, pattern='^' + str(E_COMPUTER_HELP) + '$'),
                 CallbackQueryHandler(accept, pattern='^' + str(ACCEPT) + '$'),
+                CallbackQueryHandler(edit, pattern='^' + str(EDIT) + '$'),
+                CallbackQueryHandler(variable_choose, pattern='^' + str(VARIABLE_CHOOSE) + '$'),
+                CallbackQueryHandler(e_name, pattern='^' + str(E_NAME) + '$'),
+                CallbackQueryHandler(e_description, pattern='^' + str(E_DESCRIPTION) + '$'),
+                CallbackQueryHandler(e_deadline, pattern='^' + str(E_DEADLINE) + '$'),
+                CallbackQueryHandler(e_connection, pattern='^' + str(E_CONNECTION) + '$'),
+                CallbackQueryHandler(e_cost, pattern='^' + str(E_COST) + '$'),
+                CommandHandler('start', start), MessageHandler(Filters.text, name),
+                CallbackQueryHandler(delete, pattern='^' + str(DELETE) + '$'),
+                CallbackQueryHandler(d_content, pattern='^' + str(D_CONTENT) + '$'),
+                CallbackQueryHandler(d_programming, pattern='^' + str(D_PROGRAMMING) + '$'),
+                CallbackQueryHandler(d_help_homework, pattern='^' + str(D_HELP_HOMEWORK) + '$'),
+                CallbackQueryHandler(d_volunteer, pattern='^' + str(D_VOLUNTEER) + '$'),
+                CallbackQueryHandler(d_languages, pattern='^' + str(D_LANGUAGES) + '$'),
+                CallbackQueryHandler(d_serving, pattern='^' + str(D_SERVING) + '$'),
+                CallbackQueryHandler(d_marketing, pattern='^' + str(D_MARKETING) + '$'),
+                CallbackQueryHandler(d_computer_help, pattern='^' + str(D_COMPUTER_HELP) + '$'),
+                CallbackQueryHandler(d_variable_choose, pattern='^' + str(D_VARIABLE_CHOOSE) + '$'),
             ],
-
             PAY: [CallbackQueryHandler(pay_card_or_cash, pattern='^' + str(PAY_CARD_OR_CASH) + '$'),
                   CallbackQueryHandler(without_money, pattern='^' + str(WITHOUT_MONEY) + '$'),
+                  CommandHandler('start', start), MessageHandler(Filters.text, name),
                   ],
-            INFO_ABOUT_VACANCY: [CommandHandler('start', start), MessageHandler(Filters.text, info_about_vacancy)],
+
+            ACCEPTOR: [
+                CallbackQueryHandler(e_accept, pattern='^' + str(E_ACCEPT) + '$'),
+                CallbackQueryHandler(e_accepted, pattern='^' + str(E_ACCEPTED) + '$'),
+                CommandHandler('start', start), MessageHandler(Filters.text, e_accept),
+            ],
+            INFO_ABOUT_VACANCY: [CommandHandler('start', start), MessageHandler(Filters.text, info_about_vacancy),
+                                 MessageHandler(Filters.text, name)],
             DEADLINE: [CommandHandler('start', start), MessageHandler(Filters.text, deadline)],
-            CREATE: [CallbackQueryHandler(create, pattern='^' + str(CREATE) + '$')],
+            CREATE: [CallbackQueryHandler(create, pattern='^' + str(CREATE) + '$'),
+                     CommandHandler('start', start), MessageHandler(Filters.text, name)],
             COST: [CommandHandler('start', start), MessageHandler(Filters.text, cost)],
+            CONNECT: [CommandHandler('start', start), MessageHandler(Filters.text, connection)],
+            DELETE_ACCEPTOR: [CallbackQueryHandler(delete_accepted, pattern='^' + str(DELETE_ACCEPTED) + '$')]
         },
         fallbacks=[CommandHandler('start', start)],
     )

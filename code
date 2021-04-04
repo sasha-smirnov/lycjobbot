@@ -312,33 +312,38 @@ def delete_accepted(update: Update, context: CallbackContext) -> None:
         NEEDED["{}".format(update.callback_query.from_user.id)][
             NUMBER["{}".format(update.callback_query.from_user.id)] % len(
                 NEEDED["{}".format(update.callback_query.from_user.id)])]
-    print(ACTIVE_USERS)
-    print(NEEDED["{}".format(update.callback_query.from_user.id)][
-        NUMBER["{}".format(update.callback_query.from_user.id)]])
     if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Компьютерная помощь":
         jobdata.PCColl.delete_one(NEEDED["{}".format(update.callback_query.from_user.id)][
-            NUMBER["{}".format(update.callback_query.from_user.id)]])
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])])
     if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Программирование":
         jobdata.ProgColl.delete_one(NEEDED["{}".format(update.callback_query.from_user.id)][
-            NUMBER["{}".format(update.callback_query.from_user.id)]])
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])])
     if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Уроки(помощь)":
         jobdata.LessColl.delete_one(NEEDED["{}".format(update.callback_query.from_user.id)][
-            NUMBER["{}".format(update.callback_query.from_user.id)]])
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])])
     if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Волонтерская помощь":
         jobdata.VolColl.delete_one(NEEDED["{}".format(update.callback_query.from_user.id)][
-            NUMBER["{}".format(update.callback_query.from_user.id)]])
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])])
     if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Маркетинг":
         jobdata.MarkColl.delete_one(NEEDED["{}".format(update.callback_query.from_user.id)][
-            NUMBER["{}".format(update.callback_query.from_user.id)]])
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])])
     if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Языки":
         jobdata.LangColl.delete_one(NEEDED["{}".format(update.callback_query.from_user.id)][
-            NUMBER["{}".format(update.callback_query.from_user.id)]])
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])])
     if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Обслуживание":
         jobdata.ServColl.delete_one(NEEDED["{}".format(update.callback_query.from_user.id)][
-            NUMBER["{}".format(update.callback_query.from_user.id)]])
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])])
     if ACTIVE_USERS["{}".format(update.callback_query.from_user.id)]["type_of_work"] == "Создание контента":
         jobdata.ContColl.delete_one(NEEDED["{}".format(update.callback_query.from_user.id)][
-            NUMBER["{}".format(update.callback_query.from_user.id)]])
+            NUMBER["{}".format(update.callback_query.from_user.id)] % len(
+                NEEDED["{}".format(update.callback_query.from_user.id)])])
     keyboard = [[InlineKeyboardButton("Назад", callback_data=str(DELETE))]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     query.edit_message_text(
